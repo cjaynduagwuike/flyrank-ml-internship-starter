@@ -1,0 +1,7 @@
+{
+  "run_date": "2026-08-21",
+  "base_rate": 0.1876902850816496,
+  "precision_at_20": 0.35,
+  "test_set_rows": 28904,
+  "random_state": 42
+}
