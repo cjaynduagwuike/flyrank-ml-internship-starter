@@ -32,17 +32,64 @@ Data used in training the model was accessed from the FlyRank HuggingFace wareho
 - `future_impressions` column: Excluded because it contains information from the target window and would cause data leakage if added to the model training data.
 - `future_decline_label` column: Excluded because it is the target and as such can never be a feature
 
-During the data aggregation phase, I took special care to avoid the introduction of post-decision features into my cached dataset
+During the data aggregation phase, I took special care to avoid the introduction of post-decision features into my cached dataset. I also made sure to take care that no client-identifying markers were made public anywhere throughout my dataset.
 
 ## 3. Baseline
 
 The transparent rule or score you built first. Why it's a fair comparison, and its numbers on
 the same data and metric as your model.
 
+My baseline was calculated by assigning points to each reason code an eligible page recieved 
+> Note that pages eligible for baseline scoring must have impressions during February 2026 above 100 and must have a `future_decline_label` value of 1.
+The baseline assigned points based on the value of the reason code(s) attachedd to it, with reason codes such as `limited_prior_visibility` possessing higher influence on a pages baseline score than other reason codes.
+
+```python
+dataframe['high_visibility_at_risk'] = (
+    (dataframe['prior_impressions'] >= 1000)
+    & (dataframe['prior_avg_position'] > 10)
+).astype(int)
+dataframe['weak_position_signal'] = (
+    dataframe['prior_avg_position'] > 10
+).fillna(False).astype(int)
+dataframe['low_prior_engagement'] = (
+    (dataframe['prior_sessions'] > 0)
+    & (dataframe['prior_engagement_rate'] < 0.30)
+).fillna(False).astype(int)
+dataframe['low_click_through_rate'] = (
+    dataframe['prior_ctr'] < 0.01
+).fillna(False).astype(int)
+dataframe['limited_prior_visibility'] = (
+    dataframe['prior_impressions'] < 1000
+).astype(int)
+
+dataframe['baseline_score'] = (
+    3 * dataframe['limited_prior_visibility']
+    + dataframe['weak_position_signal']
+    + dataframe['low_prior_engagement']
+    + dataframe['low_click_through_rate']
+)
+```
+
+The baseline achieved a Precision@20 of 20% with 21.7% of the ~80k eligible rows possessing a positive future decline label. Thus the baseline was fairly accurate in its estimate. I then decided to check whether a model would achieve a better Precision@20 with the same dataset and client-aware split.
+
 ## 4. Model / analysis
 
 Your method and why it fits the lane. The exact feature list (and what you left out on
 purpose). The target or proxy definition, in one sentence.
+
+I chose a ranking approach as I was to rank pages based on the signals that influenced variations in their movement or search visibility. My feature list was broad and aptly covered consisting of these:
+
+```python
+model_features = ['prior_impressions', 'prior_clicks','prior_ctr','prior_avg_position', 'prior_sessions', 'prior_engagement_rate']
+```
+
+Excluded from my model features were:
+- `client_hash_id`
+- `content_hash_id`
+- `future_decline_label`
+- `future_impressions`
+
+My target (`y`) was `future_decline_label`, a binary value of 0 or 1, with 1 assigned to a row if its `future_impressions` were less than 80% of its `prior_impressions` and 0 assigned otherwise. The model was to predict a value of 0 or 1 to a page based on the values of the page's `prior_*` columns.
 
 ## 5. Evaluation
 
